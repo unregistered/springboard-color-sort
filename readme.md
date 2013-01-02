@@ -1,6 +1,6 @@
 # SpringBoard Color Sort
 __Sorts iOS icons by color__
-[Imgur](http://i.imgur.com/9gM5I.png)
+![Imgur](http://i.imgur.com/9gM5I.png)
 
 ## Prerequisites
 Requires a jailbroken iOS device (tested with iOS 5) with OpenSSH server installed.
