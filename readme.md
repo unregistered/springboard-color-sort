@@ -14,7 +14,6 @@ Open `Rakefile` and set the `USER` and `HOST` variables accordingly.
 ## Todo
 * Better color detection, only looking at borders of icons
 * Better color sorting, taking into account saturation in addition to hue
-* Handle app folders
 * Handle system apps
 
 ## Usable?

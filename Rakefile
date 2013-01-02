@@ -1,4 +1,17 @@
-# Back to rake I see
+#
+# Things you should edit
+#  
+USER = 'mobile'
+HOST = 'Chris-Lis-iPhone.local'
+WORKSPACEDIR = "_tmp"
+SKIP_FIRST_N_PAGES = 1 # How many pages of icons to not touch. If set to 1, 
+                       # the first page won't be included in sorting. 
+ICONS_PER_PAGE = 16 # Assuming iPhone < 5
+
+
+#
+# Things you shouldn't have to edit
+#
 require 'pry' if ENV['DEBUG']
 require 'pathname'
 require 'plist'
@@ -14,9 +27,26 @@ module MiniMagick
   end
 end
 
-USER = 'mobile'
-HOST = 'Chris-Lis-iPhone.local'
-WORKSPACEDIR = "_tmp"
+class Array
+  def springboard_flatten
+    new_a = []
+    self.flatten.each do |item|
+      if item.is_a? String
+        # Bare icon, insert it directly
+        new_a.push item
+      elsif item.is_a? Hash
+        # Means we have a folder
+        item['iconLists'].flatten.each do |bundleid|
+          new_a.push bundleid
+        end
+      else
+        raise "Found non-string or non-hash in IconState.plist. Please open an issue and upload your IconState.plist file."
+      end
+    end
+    
+    return new_a
+  end
+end
 
 def remote_sh cmd
   sh "ssh #{USER}@#{HOST} '#{cmd}'"
@@ -155,23 +185,58 @@ task :sort do
   iconstate = Pathname.new "#{WORKSPACEDIR}/IconState.plist"
   icondata = Plist::parse_xml iconstate
   combined_lut = {} # All icons merged with colors
-  icondata['iconLists'].flatten.each do |bundleid|
-    combined_lut[bundleid] = lut[bundleid] || 0
+  icondata['iconLists'].springboard_flatten.each do |bundleid|
+    combined_lut[bundleid] = lut[bundleid] || -1
+    puts "Icon not found for #{bundleid}" unless lut[bundleid]
   end
   
   puts "Sorting..."
   sorted = combined_lut.sort_by{|k,v| v}
   
-  # Emit plist
-  idx = 0
+  # Emit plist  
+  # iconLists is an array of arrays
   newicondata = icondata.dup
-  newicondata['iconLists'] = icondata['iconLists'].map do |page|
-    page.map do |x|
-      newentry = sorted[idx][0]
-      idx += 1
-      newentry
+  newicondata['iconLists'] = []
+  
+  # Don't touch the first N pages
+  (0...SKIP_FIRST_N_PAGES).each do |idx|
+    page = icondata['iconLists'][idx]
+    newicondata['iconLists'].push page
+    sorted.reject! do |item|
+      true if page.springboard_flatten.include? item[0]
     end
   end
+  
+  
+  # Lay down the unsorted elements
+  unsortable = sorted.select{|s| s[1] < 0}
+  while unsortable.size > 0
+    # Make a page
+    page = []
+    (0...ICONS_PER_PAGE).each do |idx|
+      app = unsortable.shift
+      page.push app[0] if app
+    end
+    
+    newicondata['iconLists'].push page
+  end
+
+  # Lay down the sorted elements
+  sortable = sorted.select{|s| s[1] >= 0}
+  while sortable.size > 0
+    # Make a page
+    page = []
+    (0...ICONS_PER_PAGE).each do |idx|
+      app = sortable.shift # Remove from sorted list
+      page.push app[0] if app # Add to page. app is nil if we run out of icons
+    end
+    newicondata['iconLists'].push page
+  end
+  
+  # Last sanity check before we output the file
+  old_icon_count = icondata['iconLists'].springboard_flatten.count
+  new_icon_count = newicondata['iconLists'].springboard_flatten.count
+  raise "Inconsistency error: #{old_icon_count} != #{new_icon_count}" if old_icon_count != new_icon_count
   
   ofile = Pathname.new "#{WORKSPACEDIR}/IconStateToBePushed.plist"
   ofile.open("w") do |io|
